@@ -57,7 +57,7 @@ services:
       traefik.http.routers.crm.rule: "Host(`crm.${PROJECT_DOMAIN}`)"
       traefik.http.routers.crm.entrypoints: websecure
       traefik.http.services.crm.loadbalancer.server.port: 80
-   port:
+   ports:
     - ${CRM_WEBSITE_SECURE_PORT}:443
     - ${CRM_WEBSITE_PORT}:80
    depends_on:
@@ -98,7 +98,7 @@ services:
       traefik.http.routers.mautic.rule: "Host(`mautic.${PROJECT_DOMAIN}`)"
       traefik.http.routers.mautic.entrypoints: websecure
       traefik.http.services.mautic.loadbalancer.server.port: 80
-    port:
+    ports:
       - ${MAUTIC_WEBSITE_SECURE_PORT}:443
       - ${MAUTIC_WEBSITE_PORT}:80
     volumes: *mautic-volumes
