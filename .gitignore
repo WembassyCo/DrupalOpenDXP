@@ -1,0 +1,8 @@
+.env
+web/*
+sql/*
+search/*
+mautic/*
+crm/*
+cron/*
+certs/*

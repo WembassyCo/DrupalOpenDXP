@@ -1,0 +1,18 @@
+api:
+  dashboard: true
+
+entryPoints:
+  web:
+    address: ":80"
+
+  websecure:
+    address: ":443"
+
+providers:
+  docker:
+    exposedByDefault: false
+
+tls:
+  certificates:
+    - certFile: /certs/local.crt
+      keyFile: /certs/local.key

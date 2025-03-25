@@ -1,0 +1,446 @@
+version: '3.7'
+
+x-mautic-volumes:
+  &mautic-volumes
+  - ./mautic/config:/var/www/html/config:z
+  - ./mautic/logs:/var/www/html/var/logs:z
+  - ./mautic/media/files:/var/www/html/docroot/media/files:z
+  - ./mautic/media/images:/var/www/html/docroot/media/images:z
+  - ./cron:/opt/mautic/cron:z
+
+services:
+  #####################################
+  # Apache containers for Drupal, CRM, Mautic
+  #####################################
+  drupal:
+    image: wodby/apache:${APACHE_TAG}
+    container_name: "${PROJECT_NAME}_drupal"
+    labels:
+      traefik.enable: true
+      traefik.http.routers.site.rule: "Host(`www.foxfuture.local`) || Host(`foxfuture.local`)"
+      traefik.http.routers.site.entrypoints: websecure
+      traefik.http.services.site.loadbalancer.server.port: 443
+    ports:
+      - ${DRUPAL_SECURE_WEBSITE}:443
+      - ${DRUPAL_WEBSITE_PORT}:80
+    depends_on:
+      - php
+      - mariadb
+    environment:
+      PHP_MAX_FILE_UPLOADS: 10G
+      PHP_POST_MAX_SIZE: 10G
+      VIRTUAL_HOST: ${DRUPAL_VHOST}
+      APACHE_LOG_LEVEL: debug
+      APACHE_BACKEND_HOST: php
+      APACHE_VHOST_PRESET: php
+      APACHE_DOCUMENT_ROOT: /var/www/html${DRUPAL_DOCROOT}
+      DB_HOST: ${PROJECT_NAME}_mariadb
+      DB_PORT: 3306
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      PHP_MEMORY_LIMIT: 20G
+      PHP_MAX_INPUT_TIME: 6000
+      PHP_DEFAULT_SOCKET_TIMEOUT: 6000
+      APACHE_TIMEOUT: 6000
+      APACHE_FCGI_PROXY_TIMEOUT: 6000
+    volumes:
+      - ${DRUPAL_PATH}:/var/www/data
+      - web-data:/var/www/html
+      - ./web/files:/var/www/files
+      - ./scripts:/var/www/scripts
+
+  crm:
+   image: wodby/apache:${APACHE_TAG}
+   container_name: "${PROJECT_NAME}_crm"
+   labels:
+      traefik.enable: true
+      traefik.http.routers.crm.rule: "Host(`crm.${PROJECT_DOMAIN}`)"
+      traefik.http.routers.crm.entrypoints: websecure
+      traefik.http.services.crm.loadbalancer.server.port: 80
+   port:
+    - ${CRM_WEBSITE_SECURE_PORT}:443
+    - ${CRM_WEBSITE_PORT}:80
+   depends_on:
+     - crm_php
+     - mariadb
+   environment:
+     PHP_MAX_FILE_UPLOADS: 10G
+     PHP_POST_MAX_SIZE: 10G
+     VIRTUAL_HOST: ${CRM_VHOST}
+     APACHE_LOG_LEVEL: debug
+     APACHE_BACKEND_HOST: crm_php
+     APACHE_VHOST_PRESET: php
+     APACHE_DOCUMENT_ROOT: /var/www/crm
+     DB_HOST: ${PROJECT_NAME}_mariadb
+     DB_PORT: 3306
+     DB_USER: ${DB_USER}
+     DB_PASSWORD: ${DB_PASSWORD}
+     PHP_MEMORY_LIMIT: 20G
+     PHP_MAX_INPUT_TIME: 6000
+     PHP_DEFAULT_SOCKET_TIMEOUT: 6000
+     APACHE_TIMEOUT: 6000
+     APACHE_FCGI_PROXY_TIMEOUT: 6000
+   links:
+     - "solr:solr"
+     - "elasticsearch:elasticsearch"
+     - "unomi:unomi"
+     - "mariadb:mariadb"
+   volumes:
+      - ${CRM_PATH}:/var/www/data
+      - crm-data1:/var/www/crm
+      - ./scripts:/var/www/scripts  
+
+  mautic:
+    image: mautic/mautic:5-apache
+    container_name: "${PROJECT_NAME}_mautic"
+    labels:
+      traefik.enable: true
+      traefik.http.routers.mautic.rule: "Host(`mautic.${PROJECT_DOMAIN}`)"
+      traefik.http.routers.mautic.entrypoints: websecure
+      traefik.http.services.mautic.loadbalancer.server.port: 80
+    port:
+      - ${MAUTIC_WEBSITE_SECURE_PORT}:443
+      - ${MAUTIC_WEBSITE_PORT}:80
+    volumes: *mautic-volumes
+    environment:
+      - DOCKER_MAUTIC_LOAD_TEST_DATA=${DOCKER_MAUTIC_LOAD_TEST_DATA}
+      - DOCKER_MAUTIC_RUN_MIGRATIONS=${DOCKER_MAUTIC_RUN_MIGRATIONS}
+    env_file:
+      - .mautic_env
+    healthcheck:
+      test: curl http://localhost
+      start_period: 5s
+      interval: 5s
+      timeout: 5s
+      retries: 100
+    depends_on:
+      mariadb:
+        condition: service_healthy
+
+  #####################################
+  # PHP Containers for Drupal and CRM. CRM uses an older version of php from drupal.
+  #####################################
+  php:
+    image: wodby/drupal-php:${PHP_TAG}
+    container_name: "${PROJECT_NAME}_php"
+    environment:
+      PHP_SENDMAIL_PATH: /usr/sbin/sendmail -t -i -S mailhog:1025
+      DB_HOST: ${PROJECT_NAME}_mariadb
+      DB_PORT: 3306
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      PHP_FPM_CLEAR_ENV: "yes"
+      PHP_MEMORY_LIMIT: 20G
+      PHP_MAX_FILE_UPLOADS: 10G
+      PHP_POST_MAX_SIZE: 10G
+      PHP_MAX_INPUT_TIME: 6000
+      PHP_DEFAULT_SOCKET_TIMEOUT: 6000
+      APACHE_TIMEOUT: 6000
+      APACHE_FCGI_PROXY_TIMEOUT: 6000
+    volumes:
+      - ${DRUPAL_PATH}:/var/www/data
+      - ./crm:/var/www/crm
+      - web-data:/var/www/html
+      - ./web/files:/var/www/files
+      - ./scripts:/var/www/scripts  
+    networks:
+      - default
+      
+  code-worker:
+    image: wodby/drupal-php:$PHP_TAG
+    container_name: "${PROJECT_NAME}_code"   
+    environment:
+      PHP_SENDMAIL_PATH: /usr/sbin/sendmail -t -i -S mailhog:1025
+      DB_HOST: ${PROJECT_NAME}_mariadb
+      DB_PORT: 3306
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      PHP_FPM_CLEAR_ENV: "yes"
+      PHP_MEMORY_LIMIT: 16G
+      PHP_MAX_FILE_UPLOADS: 10G
+      PHP_POST_MAX_SIZE: 10G
+    entrypoint: ["/bin/sh", "-c", "/var/www/scripts/code_worker.sh"]
+    volumes:
+      - ${DRUPAL_PATH}:/var/www/data
+      - ./crm:/var/www/crm
+      - web-data:/var/www/html
+      - ./web/files:/var/www/files
+      - ./scripts:/var/www/scripts 
+    networks:
+      - default
+
+  crm_php:
+    image: wodby/drupal-php:7.4 # SuiteCRM can only run properly on 7.4 atm
+    container_name: "${PROJECT_NAME}_crm_php"
+    environment:
+      PHP_SENDMAIL_PATH: /usr/sbin/sendmail -t -i -S mailhog:1025
+      DB_HOST: ${PROJECT_NAME}_mariadb
+      DB_PORT: 3306
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      PHP_FPM_CLEAR_ENV: "yes"
+      PHP_MEMORY_LIMIT: 20G
+      PHP_MAX_FILE_UPLOADS: 10G
+      PHP_POST_MAX_SIZE: 10G
+      PHP_MAX_INPUT_TIME: 6000
+      PHP_DEFAULT_SOCKET_TIMEOUT: 6000
+      APACHE_TIMEOUT: 6000
+      APACHE_FCGI_PROXY_TIMEOUT: 6000
+    volumes:
+      - ${CRM_PATH}:/var/www/data
+      - crm-data1:/var/www/crm
+      - ./scripts:/var/www/scripts  
+    networks:
+      - default
+
+  crm_code-worker:
+    image: wodby/drupal-php:$PHP_TAG
+    container_name: "${PROJECT_NAME}_crm_code"   
+    environment:
+      PHP_SENDMAIL_PATH: /usr/sbin/sendmail -t -i -S mailhog:1025
+      DB_HOST: ${PROJECT_NAME}_mariadb
+      DB_PORT: 3306
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      PHP_FPM_CLEAR_ENV: "yes"
+      GIT_URL: ${GIT_URL}
+      GIT_BRANCH: master
+      SSH_PRIVATE_KEY: ${SSH_PRIVATE_KEY}
+      PHP_MEMORY_LIMIT: 16G
+      PHP_MAX_FILE_UPLOADS: 10G
+      PHP_POST_MAX_SIZE: 10G
+    entrypoint: ["/bin/sh", "-c", "/var/www/scripts/crm_code_worker.sh"]
+    volumes:
+      - ${CRM_PATH}:/var/www/data
+      - crm-data1:/var/www/crm
+      - ./scripts:/var/www/scripts  
+    networks:
+      - default
+
+  #####################################
+  # Mariadb Container
+  #####################################
+  mariadb:
+    image: wodby/mariadb:${MARIADB_TAG}
+    container_name: "${PROJECT_NAME}_mariadb"
+    expose:
+      - 3306
+    ports:
+      - "3306:3306"
+    stop_grace_period: 30s
+    environment:
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+      MYSQL_INNODB_BUFFER_POOL_SIZE: 4G
+      MYSQL_INNODB_LOG_BUFFER_SIZE: 256M
+      MYSQL_INNODB_LOG_FILE_SIZE: 1G
+      MYSQL_INNODB_WRITE_IO_THREADS: 16
+      MYSQL_INNODB_FLUSH_LOG_AT_TRX_COMMIT: 0
+    healthcheck:
+        test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost"]
+        timeout: 20s
+        retries: 10
+    volumes:
+      - db-data:/var/lib/mysql
+      - ${SQL_FILE_PATH}:/var/lib/sql
+      # - ${SQL_IMPORT_PATH}:/docker-entrypoint-initdb.d # Place init .sql file(s) here.
+
+  #####################################
+  # Search Services
+  #####################################
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.5
+    container_name: "${PROJECT_NAME}_elasticsearch"
+    volumes: # Persist ES data in seperate "esdata" volume
+      - esdata2:/usr/share/elasticsearch/data
+    environment:
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - cluster.name=contextElasticSearch
+    ports: # Expose Elasticsearch ports
+      - "9300:9300"
+      - "9200:9200"  
+    networks:
+      - default
+
+  solr:
+   image: wodby/solr:$SOLR_TAG
+   container_name: "${PROJECT_NAME}_solr"
+   environment:
+     VIRTUAL_HOST: ${SOLR_VHOST}
+     SOLR_DEFAULT_CONFIG_SET: $SOLR_CONFIG_SET
+     SOLR_HEAP: 1024m
+   expose:
+     - 8983
+   ports:
+     - 8983:8983
+   volumes:
+     - ./search/solr:/opt/solr/server/solr    
+   networks:
+      - default
+
+  #####################################
+  # Unomi
+  #####################################
+
+  unomi:
+    image: apache/unomi:2.6.1
+    container_name: "${PROJECT_NAME}_unomi"
+    environment:
+      - ELASTICSEARCH_HOST=fox_future_elasticsearch
+      - ELASTICSEARCH_PORT=9200
+      - UNOMI_ELASTICSEARCH_ADDRESSES=fox_future_elasticsearch:9200
+      - UNOMI_THIRDPARTY_PROVIDER1_IPADDRESSES=0.0.0.0/0,::1,127.0.0.1
+    ports:
+      - ${UNOMI_WEBSITE_PORT}:8181
+      - ${UNOMI_WEBSITE_SECURE_PORT}:9443
+      - 8102:8102
+    # labels:
+    #   - "traefik.enable=true"
+    #   - "traefik.http.routers.crm.rule=Host(`unomi.${PROJECT_DOMAIN}`)"
+    #   - "traefik.http.routers.crm.entrypoints=websecure"
+    #   - "traefik.http.routers.crm.tls.certresolver=myresolver"
+    #   - "traefik.http.services.crm.loadbalancer.server.port=80"
+    depends_on:
+      - elasticsearch  
+
+  #######################################
+  # CRON TASKS
+  #######################################
+
+  crond:
+    image: wodby/drupal-php:$PHP_TAG
+    container_name: "${PROJECT_NAME}_crond"
+    environment:
+      CRONTAB: "0 * * * * drush -r /var/www/html/${DOCROOT} cron"
+    command: sudo -E LD_PRELOAD=/usr/lib/preloadable_libiconv.so crond -f -d 0
+    volumes:
+      - ${DRUPAL_PATH}:/var/www/html
+
+  crm_crond:
+    image: wodby/drupal-php:$PHP_TAG
+    container_name: "${PROJECT_NAME}_crond"
+    environment:
+      CRONTAB: "* * * * * cd /var/www/crm; php -f cron.php > /dev/null 2>&1"
+    command: sudo -E LD_PRELOAD=/usr/lib/preloadable_libiconv.so crond -f -d 0
+    volumes:
+      - ${CRM_PATH}:/var/www/crm
+
+  mautic_cron:
+    image: mautic/mautic:5-apache
+    volumes: *mautic-volumes
+    environment:
+      - DOCKER_MAUTIC_ROLE=mautic_cron
+    env_file:
+      - .mautic_env
+    depends_on:
+      mautic:
+        condition: service_healthy
+  
+  mautic_worker:
+    image: mautic/mautic:5-apache
+    volumes: *mautic-volumes
+    environment:
+      - DOCKER_MAUTIC_ROLE=mautic_worker
+    env_file:
+      - .mautic_env
+    depends_on:
+      mautic:
+        condition: service_healthy
+
+  #####################################
+  # TOOL CONTAINERS
+  #####################################
+
+  traefik:
+    image: "traefik:v3.3"
+    container_name: "traefik"
+    command:
+      - "--log.level=DEBUG"
+      - "--api.insecure=true"
+      - "--api.dashboard=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=true"
+      - "--entryPoints.web.address=:80"
+      - "--entryPoints.websecure.address=:443"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "${TRAEFIK_DASHBOARD}:8080"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+
+  whoami:
+    image: "traefik/whoami"
+    container_name: "simple-service"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.whoami.rule=Host(`whoami.foxfuture.local`)"
+      - "traefik.http.routers.whoami.entrypoints=web"
+
+  mailhog:
+    labels:
+      traefik.enable: true
+      traefik.http.routers.mailhog.rule: "Host(`mailhog.${PROJECT_DOMAIN}`)"
+      traefik.http.routers.mailhog.entrypoints: websecure
+      traefik.http.services.mailhog.loadbalancer.server.port: 8025
+    image: mailhog/mailhog
+    container_name: "${PROJECT_NAME}_mailhog"
+    environment:
+      VIRTUAL_HOST: ${PROJECT_DOMAIN}  
+
+  phpmyadmin:
+    image: phpmyadmin
+    container_name: "${PROJECT_NAME}_phpmyadmin"
+    restart: always
+    labels:
+      traefik.enable: true
+      traefik.http.routers.phpmyadmin.rule: "Host(`phpmyadmin.${PROJECT_DOMAIN}`)"
+      traefik.http.routers.phpmyadmin.entrypoints: websecure
+      traefik.http.services.phpmyadmin.loadbalancer.server.port: 80
+    links:
+      - mariadb
+    environment:
+      VIRTUAL_HOST: ${PHPMYADMIN_VHOST}
+      PMA_HOST: ${PROJECT_NAME}_mariadb
+      MEMORY_LIMIT: 10G
+      UPLOAD_LIMIT: 10G
+      MAX_EXECUTION_TIME: 100
+      # PMA_USER: ${DB_USER}
+      # PMA_PASSWORD: ${DB_PASSWORD}
+      PMA_ARBITRARY: 1
+
+  cert_generator:
+    image: alpine:latest
+    container_name: cert_generator
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        if [ ! -f /certs/local.crt ]; then
+          apk add --no-cache openssl && \
+          openssl req -x509 -newkey rsa:2048 -sha256 -nodes \
+            -keyout /certs/local.key \
+            -out /certs/local.crt \
+            -subj "/CN=*.${PROJECT_DOMAIN}" \
+            -days 3650
+        fi
+    volumes:
+      - certs:/certs
+    restart: "no"
+
+volumes:
+  certs:
+  traefik-letsencrypt:
+  crm-data1:
+  web-data:
+  db-data:
+  esdata2:
+   
+networks:
+  default:
+    external: true
+    name: ${PROJECT_NAME}-docker

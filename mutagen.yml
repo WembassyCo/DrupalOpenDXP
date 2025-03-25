@@ -1,0 +1,15 @@
+sync:
+  drupal-sync:
+    alpha: ${DRUPAL_PATH}
+    beta:  docker://${PROJECT_NAME}_drupal/var/www/html
+    mode:  "two-way-resolved"
+    ignore:
+      vcs: true
+      paths:
+        - sites/default/files/
+  crm-sync:
+    alpha: ${CRM_PATH}
+    beta:  docker://${PROJECT_NAME}_crm/var/www/html
+    mode:  "two-way-resolved"
+    ignore:
+      vcs: true
