@@ -146,29 +146,6 @@ services:
     networks:
       - default
       
-  code-worker:
-    image: wodby/drupal-php:$PHP_TAG
-    container_name: "${PROJECT_NAME}_code"   
-    environment:
-      PHP_SENDMAIL_PATH: /usr/sbin/sendmail -t -i -S mailhog:1025
-      DB_HOST: ${PROJECT_NAME}_mariadb
-      DB_PORT: 3306
-      DB_USER: ${DB_USER}
-      DB_PASSWORD: ${DB_PASSWORD}
-      PHP_FPM_CLEAR_ENV: "yes"
-      PHP_MEMORY_LIMIT: 16G
-      PHP_MAX_FILE_UPLOADS: 10G
-      PHP_POST_MAX_SIZE: 10G
-    entrypoint: ["/bin/sh", "-c", "/var/www/scripts/code_worker.sh"]
-    volumes:
-      - ${DRUPAL_PATH}:/var/www/data
-      - ./crm:/var/www/crm
-      - web-data:/var/www/html
-      - ./web/files:/var/www/files
-      - ./scripts:/var/www/scripts 
-    networks:
-      - default
-
   crm_php:
     image: wodby/drupal-php:7.4 # SuiteCRM can only run properly on 7.4 atm
     container_name: "${PROJECT_NAME}_crm_php"
@@ -186,30 +163,6 @@ services:
       PHP_DEFAULT_SOCKET_TIMEOUT: 6000
       APACHE_TIMEOUT: 6000
       APACHE_FCGI_PROXY_TIMEOUT: 6000
-    volumes:
-      - ${CRM_PATH}:/var/www/data
-      - crm-data1:/var/www/crm
-      - ./scripts:/var/www/scripts  
-    networks:
-      - default
-
-  crm_code-worker:
-    image: wodby/drupal-php:$PHP_TAG
-    container_name: "${PROJECT_NAME}_crm_code"   
-    environment:
-      PHP_SENDMAIL_PATH: /usr/sbin/sendmail -t -i -S mailhog:1025
-      DB_HOST: ${PROJECT_NAME}_mariadb
-      DB_PORT: 3306
-      DB_USER: ${DB_USER}
-      DB_PASSWORD: ${DB_PASSWORD}
-      PHP_FPM_CLEAR_ENV: "yes"
-      GIT_URL: ${GIT_URL}
-      GIT_BRANCH: master
-      SSH_PRIVATE_KEY: ${SSH_PRIVATE_KEY}
-      PHP_MEMORY_LIMIT: 16G
-      PHP_MAX_FILE_UPLOADS: 10G
-      PHP_POST_MAX_SIZE: 10G
-    entrypoint: ["/bin/sh", "-c", "/var/www/scripts/crm_code_worker.sh"]
     volumes:
       - ${CRM_PATH}:/var/www/data
       - crm-data1:/var/www/crm
