@@ -17,7 +17,7 @@ services:
     container_name: "${PROJECT_NAME}_drupal"
     labels:
       traefik.enable: true
-      traefik.http.routers.site.rule: "Host(`www.foxfuture.local`) || Host(`foxfuture.local`)"
+      traefik.http.routers.site.rule: "Host(`www.${PROJECT_DOMAIN}`) || Host(`${PROJECT_DOMAIN}`)"
       traefik.http.routers.site.entrypoints: websecure
       traefik.http.services.site.loadbalancer.server.port: 443
     ports:
